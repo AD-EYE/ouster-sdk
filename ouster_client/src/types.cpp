@@ -506,10 +506,13 @@ static sensor_config parse_config(const Json::Value& root) {
 
     // deprecated params from 1.13. set 2.0 configs appropriately
     if (!root["udp_ip"].empty()) config.udp_dest = root["udp_ip"].asString();
-    if (!root["auto_start_flag"].empty())
-        config.operating_mode = root["auto_start_flag"].asBool()
-                                    ? sensor::OPERATING_NORMAL
-                                    : sensor::OPERATING_STANDBY;
+    
+    config.operating_mode = sensor::OPERATING_NORMAL;
+
+    //if (!root["auto_start_flag"].empty())
+    //    config.operating_mode = root["auto_start_flag"].asBool()
+    //                                ? sensor::OPERATING_NORMAL
+    //                                : sensor::OPERATING_STANDBY;
 
     if (!root["columns_per_packet"].empty())
         config.columns_per_packet = root["columns_per_packet"].asInt();
@@ -912,16 +915,6 @@ Json::Value to_json(const sensor_config& config, bool compat) {
         root["lidar_mode"] = to_string(config.ld_mode.value());
     }
 
-    if (config.operating_mode) {
-        // use deprecated config for 1.13 compatibility
-        auto mode = config.operating_mode.value();
-        if (compat) {
-            root["auto_start_flag"] =
-                (mode == OperatingMode::OPERATING_NORMAL) ? 1 : 0;
-        } else {
-            root["operating_mode"] = to_string(mode);
-        }
-    }
 
     if (config.multipurpose_io_mode) {
         root["multipurpose_io_mode"] =
