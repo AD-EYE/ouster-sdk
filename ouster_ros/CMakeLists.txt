@@ -24,7 +24,7 @@ find_package(
 
 # ==== Options ====
 set(CMAKE_CXX_STANDARD 14)
-add_compile_options(-Wall -Wextra -Werror -Wno-error=deprecated-declarations)
+add_compile_options(-Wall -Wextra -Werror -Wno-error=deprecated-declarations -Wno-unused-parameter)
 option(CMAKE_POSITION_INDEPENDENT_CODE "Build position independent code." ON)
 
 # ==== Catkin ====
