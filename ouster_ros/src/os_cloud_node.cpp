@@ -28,6 +28,68 @@ using Cloud = ouster_ros::Cloud;
 using Point = ouster_ros::Point;
 namespace sensor = ouster::sensor;
 
+
+//============== begin new FOV shrinker ====================
+/**
+ * @brief Filter point clouds, to keep only the middle horizontal beams in the Field of View (FOV)
+ * @param start_beam starting beam index in FOV
+ * @param end_beam ending beam index in FOV
+ * @param debug Enable debug messages
+ */
+
+ sensor_msg::PointsClouds FOV_shrinker(
+    const sensor_msgs::PointCloud2& cloud_msg,
+    unit32_t start_beam,
+    unit32_t end_beam,
+    bool debug = false){
+        try{
+            ros::Time start_time = ros::Time::now();
+
+            uint32_t ros_height = end_beam - start_beam + 1;
+
+            if(debug){
+                ROS_INFO("Original data size: %zu bytes", cloud_msg.data.size());
+                ROS_INFO("Expected row size: %u bytes", cloud_msg.row_step);
+                ROS_INFO("Expected total size: %u bytes", cloud_msg.row_step * cloud_msg.height);
+            }
+
+            sensor_msgs::PointsCloud2 filtered_cloud;
+
+            //copy metadata
+            filtered_cloud.header = cloud_msg.header;
+            filtered_cloud.height = ros_height;
+            filtered_cloud.width = cloud_msg.width;
+            filtered_cloud.fields = cloud_msg.fields;
+            filtered_cloud.is_bigendian = cloud_msg.is_bigendian;
+            filtered_cloud.point_step = cloud_msg.point_step;
+            filtered_cloud.row_step = cloud_msg.row_step;
+            filtered_cloud.is_dense = cloud_msg.is_dense;
+
+            // allocate memory for the filtered cloud
+            filtered_cloud.data.resize(cloud_msg.row_step * ros_height);
+
+            // copy only the rows in the ROI
+            for (uint32_t i=0, beam_idx = start_beam; beam_idx < end_beam; ++i, ++beam_idx){
+                unit32_t start = beam_idx * filtered_cloud.row_step;
+                unit32_t end = start + filtered_cloud.row_step;
+                unit32_t dest = i * filtered_cloud.row_step;
+
+                if (dubug && i<2){  //just print first 2 beams to avoid log spam
+                    ROS_INFO("Copying beam %u (index %u) from %u to %u ", beam_idx, i, start, end);
+                }
+
+                std::copy(cloud_msg.data.begin() + start, cloud_msg.data.begin() + end, filtered_cloud.data.begin() + dest);
+            }
+
+            return filtered_cloud;
+        } catch (const std::exception& e) {
+            ROS_ERROR("Failed to shrink the FOV: %s", e.what());
+            return cloud_msg; // return orignal on error
+        }
+    }
+// ============ end of FOV shrinker =============
+
+
 int main(int argc, char** argv) {
     ros::init(argc, argv, "os_cloud_node");
     ros::NodeHandle nh("~");
