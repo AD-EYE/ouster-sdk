@@ -167,9 +167,18 @@ int main(int argc, char** argv) {
             if (h != ls.headers.end()) {
                 for (int i = 0; i < n_returns; i++) {
                     scan_to_cloud(xyz_lut, h->timestamp, ls, cloud, i);
-                    lidar_pubs[i].publish(ouster_ros::cloud_to_cloud_msg(
-                        cloud, h->timestamp, sensor_frame));
+                    //lidar_pubs[i].publish(ouster_ros::cloud_to_cloud_msg(
+                    //    cloud, h->timestamp, sensor_frame));
                     // =============== part of FOV shrinker =================
+                    auto cloud_msg = ouster_ros::cloud_to_cloud_msg(cloud, h->timestamp, sensor_frame);
+
+                    //publish the os_cloud
+                    lidar_pubs[i].publish(cloud_msg);
+
+                    //publish
+                    auto filtered_cloud = FOV_shrinker(cloud_msg, start_beam, end_beam, debug_mode);
+                    fov_pubs[i].publish(filtered_cloud);
+
 
                 }
             }
