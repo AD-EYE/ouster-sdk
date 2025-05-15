@@ -29,7 +29,7 @@ using Point = ouster_ros::Point;
 namespace sensor = ouster::sensor;
 
 
-//============== begin new FOV shrinker ====================
+//============== part of new FOV shrinker ====================
 /**
  * @brief Filter point clouds, to keep only the middle horizontal beams in the Field of View (FOV)
  * @param start_beam starting beam index in FOV
@@ -87,7 +87,7 @@ namespace sensor = ouster::sensor;
             return cloud_msg; // return orignal on error
         }
     }
-// ============ end of FOV shrinker =============
+// ============ FOV shrinker =============
 
 
 int main(int argc, char** argv) {
@@ -133,6 +133,24 @@ int main(int argc, char** argv) {
         lidar_pubs.push_back(pub);
     }
 
+    //============= part of FOV shrinker ===================
+    // parameter for beam selection
+
+    uint32_t n_beams = H;
+    unit32_t start_beam = nh.param("start_beam", n_beams/4);
+    unit32_t end_beam = nh.param("end_beam", start_beam + n_beams/2);
+    bool debug_mode = nh.param("debug_mode", false);
+
+    std::vector<ros::Publisher> fov_pubs;
+    for (int i = 0; i < n_returns; i++){
+        auto pub = nh.advertise<sensor_msgs::PointCloud2>(std::sring("fov_points")+img_suffix(i), 10);
+        fov_pubs.push_back(pub);
+    }
+
+    ROS_INFO("FOV point cloud filtering initialized");
+    ROS_INFO("Keeping beams %u to %u (of %u beams)", start_beam, end_beam-1, n_beams);
+   // ============= FOV shrinker ===================
+
     auto xyz_lut = ouster::make_xyz_lut(info);
 
     ouster::LidarScan ls{W, H, udp_profile_lidar};
@@ -151,6 +169,8 @@ int main(int argc, char** argv) {
                     scan_to_cloud(xyz_lut, h->timestamp, ls, cloud, i);
                     lidar_pubs[i].publish(ouster_ros::cloud_to_cloud_msg(
                         cloud, h->timestamp, sensor_frame));
+                    // =============== part of FOV shrinker =================
+
                 }
             }
         }
