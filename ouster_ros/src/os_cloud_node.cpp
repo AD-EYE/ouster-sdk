@@ -79,16 +79,16 @@ namespace sensor = ouster::sensor;
                 }
 
                 std::copy(cloud_msg.data.begin() + start, cloud_msg.data.begin() + end, filtered_cloud.data.begin() + dest);
+            }
 
-                if (debug){
-                    ros::Duration duration = ros::Time::now() - start_time;
-                    ROS_INFO("-----------------FOV shrinker performance-----------------");
-                    ROS_INFO("Input point cloud size: %u", cloud_msg.width * cloud_msg.height);
-                    ROS_INFO("Input point cloud size: %u x %u", cloud_msg.width, cloud_msg.height);
-                    ROS_INFO("Filtered point cloud: %u points", filtered_cloud.width * filtered_cloud.height);
-                    ROS_INFO("Filtered point cloud size: %u x %u", filtered_cloud.width, filtered_cloud.height);
-                    ROS_INFO("Time taken: %.2f ms", duration.toSec() * 1000.0);
-                }
+            if (debug){
+                ros::Duration duration = ros::Time::now() - start_time;
+                ROS_INFO("-----------------FOV shrinker performance-----------------");
+                ROS_INFO("Input point cloud size: %u", cloud_msg.width * cloud_msg.height);
+                ROS_INFO("Input point cloud size: %u x %u", cloud_msg.width, cloud_msg.height);
+                ROS_INFO("Filtered point cloud: %u points", filtered_cloud.width * filtered_cloud.height);
+                ROS_INFO("Filtered point cloud size: %u x %u", filtered_cloud.width, filtered_cloud.height);
+                ROS_INFO("Time taken: %.2f ms", duration.toSec() * 1000.0);
             }
 
             return filtered_cloud;
@@ -136,24 +136,26 @@ int main(int argc, char** argv) {
         return std::to_string(ind + 1);  // need second return to return 2
     };
 
-    auto lidar_pubs = std::vector<ros::Publisher>();
-    for (int i = 0; i < n_returns; i++) {
-        auto pub = nh.advertise<sensor_msgs::PointCloud2>(
-            std::string("points") + img_suffix(i), 10);
-        lidar_pubs.push_back(pub);
-    }
+    // auto lidar_pubs = std::vector<ros::Publisher>();
+    // for (int i = 0; i < n_returns; i++) {
+    //     auto pub = nh.advertise<sensor_msgs::PointCloud2>(
+    //         std::string("points") + img_suffix(i), 10);
+    //     lidar_pubs.push_back(pub);
+    // }
 
     //============= part of FOV shrinker ===================
     // parameter for beam selection
 
     uint32_t n_beams = H;
-    uint32_t start_beam = nh.param("start_beam", (int)(n_beams/4));
-    uint32_t end_beam = nh.param("end_beam", (int)(start_beam + n_beams/2));
+    int start_beam_int = nh.param("start_beam", (int)(n_beams/4));
+    int end_beam_int = nh.param("end_beam", (int)(start_beam_int + n_beams/2));
+    uint32_t start_beam = static_cast<uint32_t>(std::max(0, start_beam_int));
+    uint32_t end_beam = static_cast<uint32_t>(std::max(0, end_beam_int));
     bool debug_mode = nh.param("debug_mode", false);
 
     std::vector<ros::Publisher> fov_pubs;
     for (int i = 0; i < n_returns; i++){
-        auto pub = nh.advertise<sensor_msgs::PointCloud2>(std::string("fov_points")+img_suffix(i), 10);
+        auto pub = nh.advertise<sensor_msgs::PointCloud2>(std::string("points")+img_suffix(i), 10);
         fov_pubs.push_back(pub);
     }
 
@@ -178,14 +180,14 @@ int main(int argc, char** argv) {
                 for (int i = 0; i < n_returns; i++) {
                     scan_to_cloud(xyz_lut, h->timestamp, ls, cloud, i);
                     //lidar_pubs[i].publish(ouster_ros::cloud_to_cloud_msg(
-                    //    cloud, h->timestamp, sensor_frame));
+                    //    cloud, h->timestamp, sensor_frame));                               // original publisher
 
 
                     // =============== part of FOV shrinker =================
                     auto cloud_msg = ouster_ros::cloud_to_cloud_msg(cloud, h->timestamp, sensor_frame);
 
-                    //publish the os_cloud
-                    lidar_pubs[i].publish(cloud_msg);
+                    // //publish the os_cloud
+                    // lidar_pubs[i].publish(cloud_msg);
 
                     //publish the FOV_clouds
                     auto filtered_cloud = FOV_shrinker(cloud_msg, start_beam, end_beam, debug_mode);
