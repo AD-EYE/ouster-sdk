@@ -136,31 +136,46 @@ int main(int argc, char** argv) {
         return std::to_string(ind + 1);  // need second return to return 2
     };
 
-    // auto lidar_pubs = std::vector<ros::Publisher>();
-    // for (int i = 0; i < n_returns; i++) {
-    //     auto pub = nh.advertise<sensor_msgs::PointCloud2>(
-    //         std::string("points") + img_suffix(i), 10);
-    //     lidar_pubs.push_back(pub);
-    // }
+    auto lidar_pubs = std::vector<ros::Publisher>();
+    for (int i = 0; i < n_returns; i++) {
+        auto pub = nh.advertise<sensor_msgs::PointCloud2>(
+            std::string("points") + img_suffix(i), 10);
+        lidar_pubs.push_back(pub);
+    }
 
     //============= part of FOV shrinker ===================
     // parameter for beam selection
 
     uint32_t n_beams = H;
-    int start_beam_int = nh.param("start_beam", (int)(n_beams/4));
-    int end_beam_int = nh.param("end_beam", (int)(start_beam_int + n_beams/2));
-    uint32_t start_beam = static_cast<uint32_t>(std::max(0, start_beam_int));
-    uint32_t end_beam = static_cast<uint32_t>(std::max(0, end_beam_int));
+
+    bool filter_enabled = nh.param("enable_FOV_filter", false);  //  default to off
+
+    // Only get other parameters if FOV filter is enabled
+    int start_beam_int = 0;
+    int end_beam_int = 0;
+    uint32_t start_beam = 0;
+    uint32_t end_beam = 0;
     bool debug_mode = nh.param("debug_mode", false);
 
-    std::vector<ros::Publisher> fov_pubs;
-    for (int i = 0; i < n_returns; i++){
-        auto pub = nh.advertise<sensor_msgs::PointCloud2>(std::string("points")+img_suffix(i), 10);
-        fov_pubs.push_back(pub);
+    if (filter_enabled){
+        start_beam_int = nh.param("start_beam", (int)(n_beams/4));
+        end_beam_int = nh.param("end_beam", (int)(start_beam_int + n_beams/2));
+        start_beam = static_cast<uint32_t>(std::max(0, start_beam_int));
+        end_beam = static_cast<uint32_t>(std::max(0, end_beam_int));
+
+        ROS_INFO("FOV point cloud filtering initialized");
+        ROS_INFO("Keeping beams %u to %u (of %u beams)", start_beam, end_beam-1, n_beams);
+    } else {
+        ROS_INFO("FOV point cloud filtering disabled");
     }
 
-    ROS_INFO("FOV point cloud filtering initialized");
-    ROS_INFO("Keeping beams %u to %u (of %u beams)", start_beam, end_beam-1, n_beams);
+    // std::vector<ros::Publisher> fov_pubs;
+    // for (int i = 0; i < n_returns; i++){
+    //     auto pub = nh.advertise<sensor_msgs::PointCloud2>(std::string("points")+img_suffix(i), 10);
+    //     fov_pubs.push_back(pub);
+    // }
+
+
    // ============= FOV shrinker ===================
 
     auto xyz_lut = ouster::make_xyz_lut(info);
@@ -190,8 +205,12 @@ int main(int argc, char** argv) {
                     // lidar_pubs[i].publish(cloud_msg);
 
                     //publish the FOV_clouds
-                    auto filtered_cloud = FOV_shrinker(cloud_msg, start_beam, end_beam, debug_mode);
-                    fov_pubs[i].publish(filtered_cloud);
+                    if (filter_enabled){
+                        auto filtered_cloud = FOV_shrinker(cloud_msg, start_beam, end_beam, debug_mode);
+                        lidar_pubs[i].publish(filtered_cloud);
+                    } else{
+                        lidar_pubs[i].publish(cloud_msg);
+                    }
                     // =============== FOV shrinker =======================
 
 
