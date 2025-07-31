@@ -28,6 +28,78 @@ using Cloud = ouster_ros::Cloud;
 using Point = ouster_ros::Point;
 namespace sensor = ouster::sensor;
 
+
+//============== part of new FOV shrinker ====================
+/**
+ * @brief Filter point clouds, to keep only the middle horizontal beams in the Field of View (FOV)
+ * @param start_beam starting beam index in FOV
+ * @param end_beam ending beam index in FOV
+ * @param debug Enable debug messages
+ */
+
+ sensor_msgs::PointCloud2 FOV_shrinker(
+    const sensor_msgs::PointCloud2& cloud_msg,
+    uint32_t start_beam,
+    uint32_t end_beam,
+    bool debug = false){
+        try{
+            ros::Time start_time = ros::Time::now();
+
+            uint32_t ros_height = end_beam - start_beam + 1;
+
+            if(debug){
+                ROS_INFO("Original data size: %zu bytes", cloud_msg.data.size());
+                ROS_INFO("Expected row size: %u bytes", cloud_msg.row_step);
+                ROS_INFO("Expected total size: %u bytes", cloud_msg.row_step * cloud_msg.height);
+            }
+
+            sensor_msgs::PointCloud2 filtered_cloud;
+
+            //copy metadata
+            filtered_cloud.header = cloud_msg.header;
+            filtered_cloud.height = ros_height;
+            filtered_cloud.width = cloud_msg.width;
+            filtered_cloud.fields = cloud_msg.fields;
+            filtered_cloud.is_bigendian = cloud_msg.is_bigendian;
+            filtered_cloud.point_step = cloud_msg.point_step;
+            filtered_cloud.row_step = cloud_msg.row_step;
+            filtered_cloud.is_dense = cloud_msg.is_dense;
+
+            // allocate memory for the filtered cloud
+            filtered_cloud.data.resize(cloud_msg.row_step * ros_height);
+
+            // copy only the rows in the ROI
+            for (uint32_t i=0, beam_idx = start_beam; beam_idx <= end_beam; ++i, ++beam_idx){
+                uint32_t start = beam_idx * filtered_cloud.row_step;
+                uint32_t end = start + filtered_cloud.row_step;
+                uint32_t dest = i * filtered_cloud.row_step;
+
+                if (debug && i<2){  //just print first 2 beams to avoid log spam
+                    ROS_INFO("Copying beam %u (index %u) from %u to %u ", beam_idx, i, start, end);
+                }
+
+                std::copy(cloud_msg.data.begin() + start, cloud_msg.data.begin() + end, filtered_cloud.data.begin() + dest);
+            }
+
+            if (debug){
+                ros::Duration duration = ros::Time::now() - start_time;
+                ROS_INFO("-----------------FOV shrinker performance-----------------");
+                ROS_INFO("Input point cloud size: %u", cloud_msg.width * cloud_msg.height);
+                ROS_INFO("Input point cloud size: %u x %u", cloud_msg.width, cloud_msg.height);
+                ROS_INFO("Filtered point cloud: %u points", filtered_cloud.width * filtered_cloud.height);
+                ROS_INFO("Filtered point cloud size: %u x %u", filtered_cloud.width, filtered_cloud.height);
+                ROS_INFO("Time taken: %.2f ms", duration.toSec() * 1000.0);
+            }
+
+            return filtered_cloud;
+        } catch (const std::exception& e) {
+            ROS_ERROR("Failed to shrink the FOV: %s", e.what());
+            return cloud_msg; // return orignal on error
+        }
+    }
+// ============ FOV shrinker =============
+
+
 int main(int argc, char** argv) {
     ros::init(argc, argv, "os_cloud_node");
     ros::NodeHandle nh("~");
@@ -71,6 +143,41 @@ int main(int argc, char** argv) {
         lidar_pubs.push_back(pub);
     }
 
+    //============= part of FOV shrinker ===================
+    // parameter for beam selection
+
+    uint32_t n_beams = H;
+
+    bool filter_enabled = nh.param("enable_FOV_filter", false);  //  default to off
+
+    // Only get other parameters if FOV filter is enabled
+    int start_beam_int = 0;
+    int end_beam_int = 0;
+    uint32_t start_beam = 0;
+    uint32_t end_beam = 0;
+    bool debug_mode = nh.param("debug_mode", false);
+
+    if (filter_enabled){
+        start_beam_int = nh.param("start_beam", (int)(n_beams/4));
+        end_beam_int = nh.param("end_beam", (int)(start_beam_int + n_beams/2));
+        start_beam = static_cast<uint32_t>(std::max(0, start_beam_int));
+        end_beam = static_cast<uint32_t>(std::max(0, end_beam_int));
+
+        ROS_INFO("FOV point cloud filtering initialized");
+        ROS_INFO("Keeping beams %u to %u (of %u beams)", start_beam, end_beam-1, n_beams);
+    } else {
+        ROS_INFO("FOV point cloud filtering disabled");
+    }
+
+    // std::vector<ros::Publisher> fov_pubs;
+    // for (int i = 0; i < n_returns; i++){
+    //     auto pub = nh.advertise<sensor_msgs::PointCloud2>(std::string("points")+img_suffix(i), 10);
+    //     fov_pubs.push_back(pub);
+    // }
+
+
+   // ============= FOV shrinker ===================
+
     auto xyz_lut = ouster::make_xyz_lut(info);
 
     ouster::LidarScan ls{W, H, udp_profile_lidar};
@@ -87,8 +194,26 @@ int main(int argc, char** argv) {
             if (h != ls.headers.end()) {
                 for (int i = 0; i < n_returns; i++) {
                     scan_to_cloud(xyz_lut, h->timestamp, ls, cloud, i);
-                    lidar_pubs[i].publish(ouster_ros::cloud_to_cloud_msg(
-                        cloud, h->timestamp, sensor_frame));
+                    //lidar_pubs[i].publish(ouster_ros::cloud_to_cloud_msg(
+                    //    cloud, h->timestamp, sensor_frame));                               // original publisher
+
+
+                    // =============== part of FOV shrinker =================
+                    auto cloud_msg = ouster_ros::cloud_to_cloud_msg(cloud, h->timestamp, sensor_frame);
+
+                    // //publish the os_cloud
+                    // lidar_pubs[i].publish(cloud_msg);
+
+                    //publish the FOV_clouds
+                    if (filter_enabled){
+                        auto filtered_cloud = FOV_shrinker(cloud_msg, start_beam, end_beam, debug_mode);
+                        lidar_pubs[i].publish(filtered_cloud);
+                    } else{
+                        lidar_pubs[i].publish(cloud_msg);
+                    }
+                    // =============== FOV shrinker =======================
+
+
                 }
             }
         }
